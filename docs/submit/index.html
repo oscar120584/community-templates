@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Submit a Zabbix template</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <h1>Submit a Zabbix template</h1>
+  <p class="lede">
+    Drag in the file(s) you <strong>exported from Zabbix</strong> — and any
+    accompanying scripts or images. No fork, no pull request, no copy-paste.
+    The directory and README are built for you and checked instantly.
+  </p>
+</header>
+
+<main>
+  <section id="drop" class="dropzone" tabindex="0" aria-label="Drop files here">
+    <div class="drop-inner">
+      <strong>Drop template files here</strong>
+      <span>or <button type="button" id="pick" class="link">choose files</button></span>
+      <small>.yaml / .json / .xml exports &middot; plus .sh, .js, .png … as needed</small>
+    </div>
+    <input type="file" id="file-input" multiple hidden />
+  </section>
+
+  <section id="templates"></section>
+
+  <section id="unassigned" class="hidden">
+    <h2>Accompanying files</h2>
+    <p class="muted">These will be placed in a template's <code>files/</code> folder. Assign each to a template.</p>
+    <ul id="unassigned-list"></ul>
+  </section>
+
+  <section id="summary" class="hidden">
+    <h2>Submission preview</h2>
+    <div id="validation"></div>
+    <h3>Files that will be created</h3>
+    <pre id="tree" class="tree"></pre>
+    <div class="actions">
+      <button id="submit" type="button" disabled>Open pull request</button>
+      <span id="submit-note" class="muted"></span>
+    </div>
+  </section>
+</main>
+
+<!-- self-contained: vendored parser + shared core (same logic as CI) -->
+<script src="vendor/js-yaml.min.js"></script>
+<script src="zt.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
