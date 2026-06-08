@@ -7,9 +7,9 @@ window.ZT_CONFIG = {
   // "Enable Device Flow" checked). Public value — safe to ship.
   clientId: "Ov23liJCX9Jbl2IlwJH6",
 
-  // CORS relay for the device-flow endpoints (no secret). Local dev default;
-  // replace with your Cloudflare Worker URL in production.
-  relayBase: "http://127.0.0.1:8788",
+  // CORS relay for the device-flow endpoints (no secret). Cloudflare Worker
+  // (worker.js). For local dev, point this back at http://127.0.0.1:8788.
+  relayBase: "https://zbx-relay.oscar120584.workers.dev",
 
   // Where the PR is opened. For real contributions this is the contributor's
   // fork; for this experiment it targets the fork directly.

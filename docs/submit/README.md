@@ -47,6 +47,26 @@ category, fill author/overview. When the checks are green, click **Open pull
 request**, enter the shown code at `github.com/login/device`, authorize — the PR
 link appears.
 
+## Hosting it for others (Cloudflare relay + GitHub Pages)
+
+To let colleagues actually open PRs (not just preview the UI), the form needs a
+public HTTPS relay — a localhost relay only works on your own machine.
+
+1. **Deploy the relay** — Cloudflare dashboard → Workers & Pages → Create →
+   Worker. Replace the starter code with `worker.js`, Deploy. Copy the URL
+   (`https://<name>.<subdomain>.workers.dev`). It holds no secret.
+   (CLI alternative: `npx wrangler deploy worker.js`.)
+2. **Point the form at it** — in `config.js` set `relayBase` to that URL (no
+   trailing slash) and `clientId` to your OAuth App id.
+3. **Enable Pages** — repo Settings → Pages → Source: `main` / `/docs`. The form
+   is then at `https://<owner>.github.io/<repo>/submit/`.
+   Note: remove `docs/CNAME` (it pins share.zabbix.com and conflicts with the
+   fork's Pages domain).
+
+The relay holds no secret, so it is safe on the free tier. In a real Zabbix
+deployment the relay can instead be an nginx `location` on the same host that
+serves the form — no separate service.
+
 ## Tests
 
 ```bash
