@@ -341,15 +341,19 @@
     const paths = built.files.map((f) => f.path).sort();
     $("#tree").textContent = paths.length ? renderTree(paths) : "(nothing yet)";
 
-    // submit
-    const btn = $("#submit"), note = $("#submit-note");
-    btn.disabled = !allOk;
-    if (allOk) {
+    // submit — gated on both validation AND the consent checkbox
+    const btn = $("#submit"), note = $("#submit-note"), consent = $("#consent");
+    consent.onchange = renderSummary; // re-evaluate the button when toggled
+    const ready = allOk && consent.checked;
+    btn.disabled = !ready;
+    if (ready) {
       note.textContent = "Ready: " + paths.length + " files across " +
         Object.keys(built.layouts).length + " template(s).";
       btn.onclick = () => submitAll(built);
     } else {
-      note.textContent = "Fix the items above to enable submission.";
+      note.textContent = !allOk
+        ? "Fix the items above to enable submission."
+        : "Tick the confirmation box above to enable submission.";
       btn.onclick = null;
     }
   }

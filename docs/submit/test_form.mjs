@@ -72,6 +72,14 @@ const fsrm = "Operating_Systems/Windows/template_fsrm_utilization_windows/7.0/te
   assert(tmplDirs.length === 2, "two independent layouts built");
   assert(built.checks.every((c) => c.status === "success"), "multi-template submission still valid");
 
+  // consent gate: a valid build still can't be submitted until the box is ticked
+  APP.render();
+  const gateBtn = window.document.querySelector("#submit");
+  const gateBox = window.document.querySelector("#consent");
+  assert(gateBtn.disabled, "submit stays disabled while consent is unchecked");
+  gateBox.checked = true; gateBox.dispatchEvent(new window.Event("change"));
+  assert(!gateBtn.disabled, "ticking the consent box enables submit");
+
   console.log("\nfile tree:\n" + paths.join("\n"));
 
   // 5. submit wiring: mock GH, drop an export + a binary image, click submit,
