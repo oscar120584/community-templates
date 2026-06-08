@@ -7,12 +7,22 @@ name: Submit template (issue bot)
 
 on:
   issues:
-    types: [opened, edited, labeled]
+    # Note: a single "create issue with label" fires BOTH opened and labeled,
+    # which double-runs the bot and races on PR creation. We trigger on opened
+    # (the form applies the label at creation) and edited (re-validate after a
+    # contributor fixes the issue). Maintainers labeling later is rare and can
+    # be handled by editing the issue.
+    types: [opened, edited]
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
+
+# One run per issue; a newer edit cancels an in-flight validation.
+concurrency:
+  group: submit-${{ github.event.issue.number }}
+  cancel-in-progress: true
 
 jobs:
   submit:
@@ -49,10 +59,14 @@ jobs:
         run: gh issue comment "${{ github.event.issue.number }}" --body-file comment.md
 
       # --- success path: open the PR -------------------------------------
+      # IMPORTANT: PRs opened with the default github.token do NOT trigger
+      # other workflows (review_pr.yaml — the live-import L3 gate). To make the
+      # gate run on bot-opened PRs, create them with a PAT or GitHub App token
+      # stored as a secret and reference it here instead of github.token.
       - name: Create branch and pull request
         if: steps.bot.outputs.valid == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SUBMIT_BOT_TOKEN || github.token }}
           BRANCH: ${{ steps.bot.outputs.branch }}
           TITLE: ${{ steps.bot.outputs.title }}
           ISSUE: ${{ github.event.issue.number }}
