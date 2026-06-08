@@ -170,6 +170,31 @@
   function AssembleError(message) { this.name = "AssembleError"; this.message = message; }
   AssembleError.prototype = Object.create(Error.prototype);
 
+  const SEG_RE = /^[.a-zA-Z0-9()_-]+$/;
+  // control chars, zero-width / bidi marks, line/para separators, BOM
+  const INVISIBLE_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u2060\ufeff]/;
+
+  // Optional intermediate path between the category and the template folder,
+  // e.g. "Eaton/9PX". Returns { path, error }; path is "" when blank/invalid.
+  function validateSubpath(raw) {
+    if (raw == null) return { path: "", error: "" };
+    const s = String(raw);
+    if (INVISIBLE_RE.test(s)) return { path: "", error: "Path contains invisible or control characters." };
+    if (s.trim() === "") return { path: "", error: "" };
+    if (s !== s.trim()) return { path: "", error: "Remove the leading/trailing spaces." };
+    if (s.indexOf("\\") !== -1) return { path: "", error: "Use forward slashes (/), not backslashes." };
+    if (s.charAt(0) === "/" || s.charAt(s.length - 1) === "/") return { path: "", error: "No leading or trailing slash." };
+    if (s.indexOf("//") !== -1) return { path: "", error: "Empty path segment (//)." };
+    const segs = s.split("/");
+    for (const seg of segs) {
+      if (seg === "." || seg === "..") return { path: "", error: "Path traversal (. or ..) is not allowed." };
+      if (seg.length > 64) return { path: "", error: 'Segment too long: "' + seg + '".' };
+      if (!SEG_RE.test(seg))
+        return { path: "", error: 'Invalid segment "' + seg + '": use letters, digits, . ( ) _ - and no spaces.' };
+    }
+    return { path: segs.join("/"), error: "" };
+  }
+
   function buildLayout(parsed, category, exportContent, opts) {
     opts = opts || {};
     if (parsed.kind !== "template" && parsed.kind !== "mediatype")
@@ -184,10 +209,13 @@
     const pat = prefix === "template" ? RE_TEMPLATE_FOLDER : RE_MEDIATYPE_FOLDER;
     if (!pat.test(folder)) throw new AssembleError("Derived folder name '" + folder + "' is invalid.");
 
+    const sub = validateSubpath(opts.subpath);
+    if (sub.error) throw new AssembleError("Subpath: " + sub.error);
+
     const ext = { yaml: "yaml", json: "json", xml: "xml" }[parsed.fmt];
-    const versionDir = category + "/" + folder + "/" + parsed.version;
+    const versionDir = category + (sub.path ? "/" + sub.path : "") + "/" + folder + "/" + parsed.version;
     const layout = {
-      category, slug, prefix, version: parsed.version, fmt: parsed.fmt,
+      category, subpath: sub.path, slug, prefix, version: parsed.version, fmt: parsed.fmt,
       folderName: folder, versionDir,
       exportPath: versionDir + "/" + folder + "." + ext,
       readmePath: versionDir + "/README.md",
@@ -388,7 +416,7 @@
 
   return {
     CATEGORIES, ParseError, AssembleError,
-    parseExport, slugify, buildLayout,
+    parseExport, slugify, validateSubpath, buildLayout,
     runCheapChecks, checkForbidden, checkNames, checkStructure,
     generateReadme,
   };

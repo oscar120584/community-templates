@@ -53,6 +53,42 @@ def slugify(name: str) -> str:
     return s or "template"
 
 
+_SUBPATH_SEG = re.compile(r"^[.a-zA-Z0-9()_-]+$")
+_INVISIBLE = re.compile("[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
+
+
+def validate_subpath(raw: str | None) -> tuple[str, str]:
+    """Validate an optional intermediate path (e.g. ``Eaton/9PX``).
+
+    Returns ``(path, error)``; ``path`` is ``""`` when blank or invalid.
+    Mirrors the form's ``validateSubpath`` in zt.js.
+    """
+    if raw is None:
+        return "", ""
+    s = str(raw)
+    if _INVISIBLE.search(s):
+        return "", "Path contains invisible or control characters."
+    if s.strip() == "":
+        return "", ""
+    if s != s.strip():
+        return "", "Remove the leading/trailing spaces."
+    if "\\" in s:
+        return "", "Use forward slashes (/), not backslashes."
+    if s.startswith("/") or s.endswith("/"):
+        return "", "No leading or trailing slash."
+    if "//" in s:
+        return "", "Empty path segment (//)."
+    for seg in s.split("/"):
+        if seg in (".", ".."):
+            return "", "Path traversal (. or ..) is not allowed."
+        if len(seg) > 64:
+            return "", f'Segment too long: "{seg}".'
+        if not _SUBPATH_SEG.match(seg):
+            return "", (f'Invalid segment "{seg}": use letters, digits, '
+                        ". ( ) _ - and no spaces.")
+    return s, ""
+
+
 @dataclass
 class Layout:
     """The set of files a submission expands into, relative to repo root."""
@@ -62,6 +98,7 @@ class Layout:
     prefix: str          # 'template' or 'mediatype'
     version: str
     fmt: str
+    subpath: str = ""    # optional intermediate path, e.g. 'Eaton/9PX'
     files: dict[str, str] = field(default_factory=dict)  # path -> content
 
     @property
@@ -70,7 +107,8 @@ class Layout:
 
     @property
     def version_dir(self) -> str:
-        return f"{self.category}/{self.folder_name}/{self.version}"
+        mid = f"{self.subpath}/" if self.subpath else ""
+        return f"{self.category}/{mid}{self.folder_name}/{self.version}"
 
     @property
     def export_ext(self) -> str:
@@ -95,6 +133,7 @@ def build_layout(
     export_content: str,
     readme_content: str | None = None,
     slug: str | None = None,
+    subpath: str | None = None,
     extra_files: dict[str, bytes] | None = None,
 ) -> Layout:
     """Compute the target paths and file set for a submission.
@@ -124,12 +163,17 @@ def build_layout(
     if not pattern.match(folder):
         raise AssembleError(f"Derived folder name '{folder}' is invalid.")
 
+    sub, sub_error = validate_subpath(subpath)
+    if sub_error:
+        raise AssembleError(f"Subpath: {sub_error}")
+
     layout = Layout(
         category=category,
         slug=slug,
         prefix=prefix,
         version=parsed.version,
         fmt=parsed.fmt,
+        subpath=sub,
     )
     layout.files[layout.export_path] = export_content
     if readme_content is not None:

@@ -49,7 +49,7 @@
       if (isExport) {
         const tpl = {
           id: ++seq, fileName: f.name, content: f.content, parsed,
-          category: "", author: "", overview: "", setup: "",
+          category: "", subpath: "", author: "", overview: "", setup: "",
           slug: ZT.slugify(parsed.name), slugTouched: false,
           readme: "", readmeEdited: false, readmeEditing: false,
         };
@@ -83,7 +83,7 @@
         const readme = t.readme != null ? t.readme
           : ZT.generateReadme(t.parsed, { author: t.author, overview: t.overview });
         const layout = ZT.buildLayout(t.parsed, t.category, t.content, {
-          readme, slug: t.slug, extraFiles: accessoriesFor(t.id),
+          readme, slug: t.slug, subpath: t.subpath, extraFiles: accessoriesFor(t.id),
         });
         out.layouts[t.id] = layout;
         out.perTemplate[t.id] = { layout };
@@ -139,6 +139,13 @@
         catSel.append(o);
       });
 
+      const subInput = el("input", {
+        value: t.subpath, placeholder: "optional, e.g. Eaton/9PX",
+        oninput: (e) => { t.subpath = e.target.value; onSubpathInput(t); },
+      });
+      const subErr = el("div", { className: "field-err", id: "suberr-" + t.id });
+      const subCell = el("div", {}, [subInput, subErr]);
+
       const slugInput = el("input", {
         value: t.slug,
         oninput: (e) => { t.slug = e.target.value; t.slugTouched = true; renderSummary(); updatePath(t); },
@@ -168,6 +175,7 @@
 
       const grid = el("div", { className: "grid" }, [
         el("label", { textContent: "Category" }), catSel,
+        el("label", { textContent: "Subpath" }), subCell,
         el("label", { textContent: "Folder slug" }), slugInput,
         el("label", { textContent: "Author" }), authorCell,
         el("label", { textContent: "Overview" }), overviewInput,
@@ -188,13 +196,24 @@
     });
   }
 
+  function onSubpathInput(t) {
+    const v = ZT.validateSubpath(t.subpath);
+    const errEl = document.getElementById("suberr-" + t.id);
+    if (errEl) errEl.textContent = v.error || "";
+    updatePath(t);
+    renderSummary();
+  }
+
   function updatePath(t) {
     const line = document.getElementById("path-" + t.id);
     if (!line) return;
     if (!t.category) { line.textContent = "→ choose a category to see the target path"; return; }
+    const v = ZT.validateSubpath(t.subpath);
+    if (v.error) { line.textContent = "→ fix the subpath to see the target path"; return; }
     const prefix = t.parsed.kind === "template" ? "template" : "mediatype";
     const slug = ZT.slugify(t.slug || t.parsed.name);
-    line.textContent = "→ " + t.category + "/" + prefix + "_" + slug + "/" + t.parsed.version + "/";
+    const sub = v.path ? v.path + "/" : "";
+    line.textContent = "→ " + t.category + "/" + sub + prefix + "_" + slug + "/" + t.parsed.version + "/";
   }
 
   // README: auto-generated, with an Edit mode. Changing author/overview (or the

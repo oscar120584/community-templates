@@ -162,5 +162,30 @@ const fsrm = "Operating_Systems/Windows/template_fsrm_utilization_windows/7.0/te
   await APP.submitAll(APP.buildAll());
   assert(deviceLogins === 1, "submit reused the cached token — no second device login");
 
+  // 9. Subpath: validation + nested layout + blocking on invalid input
+  const Z = window.ZT;
+  assert(Z.validateSubpath("Eaton/9PX").path === "Eaton/9PX", "valid nested subpath accepted");
+  assert(Z.validateSubpath("").path === "" && !Z.validateSubpath("").error, "empty subpath is fine");
+  assert(Z.validateSubpath("/Eaton").error, "leading slash rejected");
+  assert(Z.validateSubpath("Eaton/").error, "trailing slash rejected");
+  assert(Z.validateSubpath("Eaton//9PX").error, "double slash rejected");
+  assert(Z.validateSubpath("Eaton/../etc").error, "path traversal rejected");
+  assert(Z.validateSubpath("Eaton 9PX").error, "space rejected");
+  assert(Z.validateSubpath("Eaton\u200b").error, "zero-width char rejected");
+  assert(Z.validateSubpath("a\\b").error, "backslash rejected");
+  assert(Z.validateSubpath("Series#1").error, "special char rejected");
+
+  APP.resetAuth(); APP.state.templates.length = 0; APP.state.accessory.length = 0;
+  await APP.onFiles([fileFrom(fsrm)]);
+  const t9 = APP.state.templates[0]; t9.category = "Applications"; t9.subpath = "Eaton/9PX";
+  let b9 = APP.buildAll();
+  const yaml9 = b9.files.find((f) => f.path.endsWith(".yaml"));
+  assert(yaml9.path.startsWith("Applications/Eaton/9PX/template_"), "subpath inserted between category and template folder");
+  assert(b9.checks.every((c) => c.status === "success"), "nested submission passes cheap checks");
+
+  t9.subpath = "bad path"; // space -> invalid
+  b9 = APP.buildAll();
+  assert(b9.perTemplate[t9.id].error && /Subpath/.test(b9.perTemplate[t9.id].error), "invalid subpath blocks the build with a clear error");
+
   if (!process.exitCode) console.log("\nALL FORM TESTS PASSED");
 })();

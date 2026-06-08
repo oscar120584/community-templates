@@ -71,7 +71,7 @@ def cmd_assemble(args) -> int:
     try:
         p = parse_export(content, args.file)
         readme = generate_readme(p, author=args.author)
-        layout = build_layout(p, args.category, content, readme_content=readme, slug=args.slug)
+        layout = build_layout(p, args.category, content, readme_content=readme, slug=args.slug, subpath=args.subpath)
     except (ParseError, AssembleError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -137,6 +137,7 @@ def main(argv=None) -> int:
     sp.add_argument("file")
     sp.add_argument("--category", required=True, choices=CATEGORIES)
     sp.add_argument("--slug")
+    sp.add_argument("--subpath", help="optional intermediate path, e.g. Eaton/9PX")
     sp.add_argument("--author")
     sp.add_argument("--write", action="store_true", help="actually write files")
     sp.set_defaults(func=cmd_assemble)
