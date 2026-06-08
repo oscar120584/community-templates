@@ -422,7 +422,7 @@
     btn.disabled = true;
     try {
       await ensureLogin();
-      setAuth("Authorized. Opening pull request" + (Object.keys(built.layouts).length > 1 ? "s" : "") + "…");
+      setAuth("Authorized. Preparing your fork and opening the pull request" + (Object.keys(built.layouts).length > 1 ? "s" : "") + "… (the fork can take a few seconds the first time)");
 
       const results = [];
       for (const id of Object.keys(built.layouts)) {
@@ -430,7 +430,7 @@
         const files = built.files.filter((f) => f.path.indexOf(layout.versionDir + "/") === 0);
         const t = state.templates.find((x) => String(x.id) === String(id));
         const r = await GH.publishSubmission({
-          token: cachedToken, owner: cfg.owner, repo: cfg.repo, base: cfg.base,
+          token: cachedToken, upstreamOwner: cfg.owner, upstreamRepo: cfg.repo, base: cfg.base,
           branch: "submit/" + layout.folderName + "-" + layout.version,
           title: "Add " + layout.folderName + " (" + layout.version + ")",
           body: "Submitted via the upload form" + (t && t.author ? " by " + t.author : "") +

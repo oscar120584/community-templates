@@ -11,7 +11,7 @@ function res(ok, status, body) {
   return Promise.resolve({ ok, status, statusText: "", text: () => Promise.resolve(JSON.stringify(body)) });
 }
 
-// --- publishSubmission sequence ---
+// --- publish: user OWNS the upstream -> direct write, no fork ---
 {
   const calls = [];
   const fakeFetch = (url, init) => {
@@ -19,12 +19,12 @@ function res(ok, status, body) {
     const path = url.replace("https://api.github.com", "");
     calls.push(method + " " + path);
     const b = init.body ? JSON.parse(init.body) : null;
+    if (method === "GET" && path === "/user") return res(true, 200, { login: "me" });
     if (method === "GET" && path.includes("/git/ref/heads/")) return res(true, 200, { object: { sha: "BASE" } });
     if (method === "GET" && path.includes("/git/commits/")) return res(true, 200, { tree: { sha: "BASETREE" } });
     if (method === "POST" && path.endsWith("/git/blobs")) return res(true, 201, { sha: "blob-" + b.encoding });
     if (method === "POST" && path.endsWith("/git/trees")) {
-      assert(b.base_tree === "BASETREE", "tree uses base_tree");
-      assert(b.tree.length === 2, "tree has both files");
+      assert(b.base_tree === "BASETREE" && b.tree.length === 2, "tree uses base_tree + both files");
       return res(true, 201, { sha: "NEWTREE" });
     }
     if (method === "POST" && path.endsWith("/git/commits")) {
@@ -36,14 +36,14 @@ function res(ok, status, body) {
       return res(true, 201, {});
     }
     if (method === "POST" && path.endsWith("/pulls")) {
-      assert(b.head === "submit/x" && b.base === "main", "PR head/base correct");
+      assert(b.head === "submit/x" && b.base === "main", "owner PR head is same-repo branch");
       return res(true, 201, { html_url: "https://gh/pr/9", number: 9 });
     }
     return res(false, 500, { message: "unexpected " + method + " " + path });
   };
 
   const out = await GH.publishSubmission({
-    token: "T", owner: "me", repo: "community-templates", base: "main", branch: "submit/x",
+    token: "T", upstreamOwner: "me", upstreamRepo: "community-templates", base: "main", branch: "submit/x",
     title: "Add x", body: "body",
     files: [
       { path: "Unsorted/template_x/7.0/template_x.yaml", content: "a: 1", encoding: "utf-8" },
@@ -54,6 +54,7 @@ function res(ok, status, body) {
 
   assert(out.url === "https://gh/pr/9", "returns PR url");
   const expected = [
+    "GET /user",
     "GET /repos/me/community-templates/git/ref/heads/main",
     "GET /repos/me/community-templates/git/commits/BASE",
     "POST /repos/me/community-templates/git/blobs",
@@ -63,7 +64,67 @@ function res(ok, status, body) {
     "POST /repos/me/community-templates/git/refs",
     "POST /repos/me/community-templates/pulls",
   ];
-  assert(JSON.stringify(calls) === JSON.stringify(expected), "REST call sequence is exactly blobs->tree->commit->ref->PR");
+  assert(JSON.stringify(calls) === JSON.stringify(expected), "owner path: no fork, identify->commit->PR");
+}
+
+// shared mock for the fork paths; `repoLookup` decides what GET /repos/alice/.. returns
+function forkFetch(repoLookup) {
+  const calls = [];
+  const fetchImpl = (url, init) => {
+    const method = init.method, path = url.replace("https://api.github.com", "");
+    calls.push(method + " " + path.split("?")[0]);
+    const b = init.body ? JSON.parse(init.body) : null;
+    if (method === "GET" && path === "/user") return res(true, 200, { login: "alice" });
+    if (method === "GET" && path === "/repos/alice/community-templates") return repoLookup();
+    if (method === "POST" && path.endsWith("/forks")) return res(true, 202, { full_name: "alice/community-templates" });
+    if (method === "POST" && path.endsWith("/merge-upstream")) return res(true, 200, {});
+    if (method === "GET" && path.includes("/git/ref/heads/")) return res(true, 200, { object: { sha: "BASE" } });
+    if (method === "GET" && path.includes("/git/commits/")) return res(true, 200, { tree: { sha: "BASETREE" } });
+    if (method === "POST" && path.endsWith("/git/blobs")) return res(true, 201, { sha: "blob" });
+    if (method === "POST" && path.endsWith("/git/trees")) return res(true, 201, { sha: "NEWTREE" });
+    if (method === "POST" && path.endsWith("/git/commits")) return res(true, 201, { sha: "COMMIT" });
+    if (method === "POST" && path.endsWith("/git/refs")) return res(true, 201, {});
+    if (method === "POST" && path.endsWith("/pulls")) {
+      assert(b.head === "alice:submit/x" && b.base === "main", "cross-repo PR head is alice:branch");
+      return res(true, 201, { html_url: "https://gh/pr/12", number: 12 });
+    }
+    return res(false, 500, { message: "unexpected " + method + " " + path });
+  };
+  return { calls, fetchImpl };
+}
+
+const publishOpts = (fetchImpl) => ({
+  token: "T", upstreamOwner: "me", upstreamRepo: "community-templates", base: "main", branch: "submit/x",
+  title: "Add x", body: "body",
+  files: [{ path: "Unsorted/template_x/7.0/template_x.yaml", content: "a: 1", encoding: "utf-8" }],
+  sleep: () => Promise.resolve(), fetchImpl,
+});
+
+// --- contributor has NO fork yet -> create it, then cross-repo PR ---
+{
+  const { calls, fetchImpl } = forkFetch(() => res(false, 404, { message: "Not Found" }));
+  const out = await GH.publishSubmission(publishOpts(fetchImpl));
+  assert(out.number === 12, "fork path returns the cross-repo PR");
+  assert(calls.includes("POST /repos/me/community-templates/forks"), "creates the fork when none exists");
+  assert(calls.includes("POST /repos/alice/community-templates/git/blobs"), "commits into the contributor's fork");
+  assert(calls.includes("POST /repos/me/community-templates/pulls"), "opens the PR on the upstream");
+}
+
+// --- contributor ALREADY has a fork -> reuse it, no POST /forks ---
+{
+  const { calls, fetchImpl } = forkFetch(() => res(true, 200, { fork: true }));
+  const out = await GH.publishSubmission(publishOpts(fetchImpl));
+  assert(out.number === 12, "existing-fork path still returns the PR");
+  assert(!calls.includes("POST /repos/me/community-templates/forks"), "does NOT re-create an existing fork");
+  assert(calls.includes("POST /repos/alice/community-templates/merge-upstream"), "syncs the existing fork base");
+}
+
+// --- name collision: a non-fork repo of the same name -> clear error ---
+{
+  const { fetchImpl } = forkFetch(() => res(true, 200, { fork: false }));
+  let threw = null;
+  try { await GH.publishSubmission(publishOpts(fetchImpl)); } catch (e) { threw = e; }
+  assert(threw && /not a fork/.test(threw.message), "errors clearly when a same-named non-fork repo exists");
 }
 
 // --- publish: existing branch (ref 422 -> PATCH force) + existing PR reuse ---
@@ -72,6 +133,7 @@ function res(ok, status, body) {
   const fakeFetch = (url, init) => {
     const method = init.method, path = url.replace("https://api.github.com", "");
     calls.push(method + " " + path.split("?")[0]);
+    if (method === "GET" && path === "/user") return res(true, 200, { login: "me" });
     if (method === "GET" && path.includes("/git/ref/heads/")) return res(true, 200, { object: { sha: "BASE" } });
     if (method === "GET" && path.includes("/git/commits/")) return res(true, 200, { tree: { sha: "BASETREE" } });
     if (method === "POST" && path.endsWith("/git/blobs")) return res(true, 201, { sha: "blob" });
@@ -84,7 +146,7 @@ function res(ok, status, body) {
     return res(false, 500, { message: "unexpected" });
   };
   const out = await GH.publishSubmission({
-    token: "T", owner: "me", repo: "r", base: "main", branch: "submit/x", title: "t", body: "b",
+    token: "T", upstreamOwner: "me", upstreamRepo: "r", base: "main", branch: "submit/x", title: "t", body: "b",
     files: [{ path: "p", content: "c", encoding: "utf-8" }], fetchImpl: fakeFetch,
   });
   assert(calls.includes("PATCH /repos/me/r/git/refs/heads/submit/x"), "force-updates existing branch ref");

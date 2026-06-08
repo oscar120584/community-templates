@@ -101,20 +101,72 @@
     };
   }
 
+  async function waitForRef(call, owner, repo, base, sleep) {
+    for (let i = 0; i < 20; i++) {
+      try {
+        await call("GET", "/repos/" + owner + "/" + repo + "/git/ref/heads/" + encodeURIComponent(base));
+        return;
+      } catch (e) {
+        await sleep(1500);
+      }
+    }
+    throw new Error("your fork is still being created — try again in a moment");
+  }
+
+  // Publishes via the fork-and-PR model so ANY contributor works (not just
+  // people with write access to the target repo):
+  //   1. identify the user; 2. ensure a fork exists in their account;
+  //   3. commit the files to a branch in THEIR fork;
+  //   4. open a cross-repo PR from <user>:branch into <upstream>:base.
   // files: [{ path, content, encoding }]  encoding = 'utf-8' | 'base64'
   // Returns { url, number, branch }.
   async function publishSubmission(opts) {
-    const { token, owner, repo, base, branch, files, title, body, fetchImpl } = opts;
+    const { token, upstreamOwner, upstreamRepo, base, branch, files, title, body, fetchImpl } = opts;
     const call = api(token, fetchImpl);
-    const R = "/repos/" + owner + "/" + repo;
+    const sleep = opts.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
 
-    // 1. base commit + its tree
+    // 1. who is authenticated
+    const me = await call("GET", "/user");
+    const login = me.login;
+
+    // 2. head repo: write to the user's own fork unless they own the upstream
+    let headOwner = upstreamOwner;
+    if (login.toLowerCase() !== upstreamOwner.toLowerCase()) {
+      headOwner = login;
+
+      // reuse an existing fork instead of blindly POSTing /forks
+      let forkExists = false;
+      try {
+        const existing = await call("GET", "/repos/" + login + "/" + upstreamRepo);
+        if (!existing.fork) {
+          throw new Error("you already have a repository named '" + upstreamRepo +
+            "' that is not a fork — rename it and try again");
+        }
+        forkExists = true;
+      } catch (e) {
+        if (e.status !== 404) throw e; // 404 just means "no fork yet"
+      }
+      if (!forkExists) {
+        await call("POST", "/repos/" + upstreamOwner + "/" + upstreamRepo + "/forks", {});
+        await waitForRef(call, login, upstreamRepo, base, sleep);
+      }
+
+      // best-effort: sync the fork's base branch with upstream so the PR has a
+      // clean base even if the fork was created long ago. Diverged forks just
+      // skip this and proceed as-is.
+      try {
+        await call("POST", "/repos/" + login + "/" + upstreamRepo + "/merge-upstream", { branch: base });
+      } catch (e) { /* nothing to sync or diverged — proceed */ }
+    }
+    const R = "/repos/" + headOwner + "/" + upstreamRepo;
+
+    // 3. base commit + its tree (from the head repo's base branch)
     const ref = await call("GET", R + "/git/ref/heads/" + encodeURIComponent(base));
     const baseSha = ref.object.sha;
     const baseCommit = await call("GET", R + "/git/commits/" + baseSha);
     const baseTree = baseCommit.tree.sha;
 
-    // 2. blobs
+    // 4. blobs
     const treeItems = [];
     for (const file of files) {
       const blob = await call("POST", R + "/git/blobs", {
@@ -124,13 +176,13 @@
       treeItems.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
     }
 
-    // 3. tree, 4. commit
+    // 5. tree, 6. commit
     const tree = await call("POST", R + "/git/trees", { base_tree: baseTree, tree: treeItems });
     const commit = await call("POST", R + "/git/commits", {
       message: title, tree: tree.sha, parents: [baseSha],
     });
 
-    // 5. create or fast-forward the branch ref
+    // 7. create or fast-forward the branch ref in the head repo
     const refPath = "refs/heads/" + branch;
     try {
       await call("POST", R + "/git/refs", { ref: refPath, sha: commit.sha });
@@ -139,13 +191,15 @@
       else throw e;
     }
 
-    // 6. open the PR (or reuse an existing open one for this head)
+    // 8. open the cross-repo PR on the upstream (or reuse an existing one)
+    const U = "/repos/" + upstreamOwner + "/" + upstreamRepo;
+    const head = headOwner === upstreamOwner ? branch : headOwner + ":" + branch;
     try {
-      const pr = await call("POST", R + "/pulls", { title, head: branch, base, body });
+      const pr = await call("POST", U + "/pulls", { title, head, base, body });
       return { url: pr.html_url, number: pr.number, branch };
     } catch (e) {
       if (e.status === 422) {
-        const existing = await call("GET", R + "/pulls?head=" + owner + ":" + branch + "&state=open");
+        const existing = await call("GET", U + "/pulls?head=" + headOwner + ":" + branch + "&state=open");
         if (existing && existing[0]) return { url: existing[0].html_url, number: existing[0].number, branch };
       }
       throw e;
