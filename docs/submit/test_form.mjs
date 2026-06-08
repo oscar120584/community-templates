@@ -98,5 +98,69 @@ const fsrm = "Operating_Systems/Windows/template_fsrm_utilization_windows/7.0/te
   const ymlf = sent.files.find((f) => f.path.endsWith(".yaml"));
   assert(ymlf && ymlf.encoding === "utf-8", "export sent as utf-8");
 
+  // 6. README edit + regenerate-overwrite behaviour
+  APP.state.templates.length = 0; APP.state.accessory.length = 0;
+  await APP.onFiles([fileFrom(fsrm)]);
+  const tr = APP.state.templates[0];
+  tr.category = "Operating_Systems";
+  assert(tr.readme && tr.readme.startsWith("# FSRM Utilization"), "README auto-generated on upload");
+
+  // manual edit is carried into the submission
+  tr.readme = "# My hand-written README\n\nCustom content."; tr.readmeEdited = true;
+  let b = APP.buildAll();
+  let readmeFile = b.files.find((f) => f.path.endsWith("/README.md"));
+  assert(readmeFile.content === "# My hand-written README\n\nCustom content.", "buildAll uses the edited README");
+
+  // changing a content field regenerates and overwrites the manual edit
+  tr.overview = "Overrides everything.";
+  APP.regenReadme(tr);
+  assert(tr.readmeEdited === false, "regenerate clears the edited flag");
+  assert(tr.readme.includes("Overrides everything."), "regenerated README picks up the new overview");
+  assert(!tr.readme.includes("hand-written"), "regenerate overwrote the manual edit (by design)");
+  b = APP.buildAll();
+  readmeFile = b.files.find((f) => f.path.endsWith("/README.md"));
+  assert(readmeFile.content.includes("Overrides everything."), "submission now carries the regenerated README");
+
+  // 7. soften: a hand-edited README is not auto-overwritten on field input;
+  //    regeneration is gated behind a confirm on field commit (blur).
+  APP.state.templates.length = 0; APP.state.accessory.length = 0;
+  await APP.onFiles([fileFrom(fsrm)]);
+  const t7 = APP.state.templates[0]; t7.category = "Operating_Systems";
+  t7.readme = "# mine"; t7.readmeEdited = true;
+
+  t7.overview = "changed";
+  APP.onContentInput(t7); // simulates typing in a field
+  assert(t7.readme === "# mine" && t7.readmeEdited === true, "field input does NOT overwrite a hand-edited README");
+
+  window.confirm = () => false; // user declines on blur
+  APP.maybeRegenOnCommit(t7);
+  assert(t7.readme === "# mine", "declining the prompt keeps the manual README");
+
+  window.confirm = () => true; // user accepts on blur
+  APP.maybeRegenOnCommit(t7);
+  assert(t7.readmeEdited === false && t7.readme.includes("changed"), "accepting the prompt regenerates from fields");
+
+  // 8. "Use GitHub account": fills author from the profile and signs in, so a
+  //    subsequent submit does not trigger device login again.
+  APP.resetAuth(); // clear token cached by the earlier submit test
+  APP.state.templates.length = 0; APP.state.accessory.length = 0;
+  await APP.onFiles([fileFrom(shelly)]);
+  const t8 = APP.state.templates[0]; t8.category = "Unsorted";
+
+  let deviceLogins = 0;
+  window.GH = {
+    deviceLogin: async (o) => { deviceLogins++; o.onCode && o.onCode({ user_code: "AAAA-BBBB", verification_uri: "x", expires_in: 900 }); return "gho_USER"; },
+    publishSubmission: async () => ({ url: "https://github.com/x/y/pull/1", number: 1 }),
+  };
+  window.ZT_CONFIG = { clientId: "Iv1.test", relayBase: "x", owner: "o", repo: "r", base: "main" };
+  window.fetch = async (url) => ({ ok: true, json: async () => ({ login: "octocat", name: "Octo Cat" }) });
+
+  await APP.useGithubAccount(t8);
+  assert(t8.author === "Octo Cat", "author filled from GitHub profile (name)");
+  assert(deviceLogins === 1, "useGithubAccount triggered one device login");
+
+  await APP.submitAll(APP.buildAll());
+  assert(deviceLogins === 1, "submit reused the cached token — no second device login");
+
   if (!process.exitCode) console.log("\nALL FORM TESTS PASSED");
 })();

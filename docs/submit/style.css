@@ -40,6 +40,9 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 }
 .grid textarea { min-height: 64px; resize: vertical; }
 .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: var(--muted); }
+.author-row { display: flex; gap: 8px; align-items: center; }
+.author-row input { flex: 1; }
+.ghbtn { white-space: nowrap; }
 
 .status { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13.5px; }
 .status.ok { color: var(--ok); } .status.bad { color: var(--bad); }
@@ -48,6 +51,32 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 
 details { margin-top: 12px; } summary { cursor: pointer; color: var(--accent); font-size: 13.5px; }
 .preview { background: var(--code); border: 1px solid var(--line); border-radius: 7px; padding: 12px; overflow: auto; max-height: 340px; font-size: 12.5px; white-space: pre-wrap; }
+
+.readme { margin-top: 8px; }
+.readme-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.readme-edit {
+  width: 100%; min-height: 320px; resize: vertical; padding: 12px;
+  border: 1px solid var(--line); border-radius: 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.45;
+}
+
+.markdown-body {
+  border: 1px solid var(--line); border-radius: 7px; padding: 16px 18px;
+  max-height: 420px; overflow: auto; font-size: 14px;
+}
+.markdown-body h1 { font-size: 22px; border-bottom: 1px solid var(--line); padding-bottom: 6px; margin: 0 0 12px; }
+.markdown-body h2 { font-size: 18px; border-bottom: 1px solid var(--line); padding-bottom: 5px; margin: 22px 0 10px; }
+.markdown-body h3 { font-size: 15px; margin: 18px 0 8px; }
+.markdown-body p { margin: 8px 0; }
+.markdown-body code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 85%; }
+.markdown-body pre { background: var(--code); padding: 12px; border-radius: 6px; overflow: auto; }
+.markdown-body pre code { background: none; padding: 0; }
+.markdown-body table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; display: block; overflow: auto; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+.markdown-body th { background: var(--code); }
+.markdown-body ul, .markdown-body ol { padding-left: 22px; margin: 8px 0; }
+.markdown-body a { color: var(--accent); }
+.markdown-body blockquote { border-left: 3px solid var(--line); margin: 8px 0; padding: 0 12px; color: var(--muted); }
 
 .tree { background: var(--code); border: 1px solid var(--line); border-radius: 7px; padding: 12px; font-size: 12.5px; overflow: auto; }
 .actions { display: flex; align-items: center; gap: 12px; margin: 16px 0 60px; }

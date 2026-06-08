@@ -5,7 +5,7 @@
 window.ZT_CONFIG = {
   // GitHub OAuth App client id (Settings → Developer settings → OAuth Apps,
   // "Enable Device Flow" checked). Public value — safe to ship.
-  clientId: "",
+  clientId: "Ov23liJCX9Jbl2IlwJH6",
 
   // CORS relay for the device-flow endpoints (no secret). Local dev default;
   // replace with your Cloudflare Worker URL in production.

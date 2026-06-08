@@ -369,12 +369,13 @@
     const title = parsed.name || parsed.internalName || "Template";
     const ver = parsed.version || "your Zabbix version";
     const overview = opts.overview || (parsed.description || "").trim() || STUB;
+    const setup = opts.setup || (STUB + " Describe how to enable data collection on the target and how to link the template to a host.");
     return [
       "# " + title, "",
       "## Overview", "", overview, "",
       "## Author", "", opts.author || STUB, "",
       "## Zabbix version", "", "This template is compatible with Zabbix " + ver + " and later versions.", "",
-      "## Setup", "", STUB + " Describe how to enable data collection on the target and how to link the template to a host.", "",
+      "## Setup", "", setup, "",
       "## Macros used", "", macrosTable(parsed.macros), "",
       "## Items collected", "", itemsTable(parsed.items), "",
       "## Triggers", "", triggersTable(parsed.triggers), "",
