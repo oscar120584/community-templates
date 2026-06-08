@@ -58,3 +58,12 @@ button#submit {
 button#submit:disabled { background: #c9ccd1; cursor: not-allowed; }
 .btn-small { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
 .assign select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }
+
+#auth { margin: 14px 0 60px; }
+#auth .usercode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 26px;
+  letter-spacing: 3px; font-weight: 700; background: var(--code);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;
+  display: inline-block; margin: 8px 0;
+}
+#auth .done { color: var(--ok); font-weight: 600; }

@@ -22,11 +22,17 @@
 
   function readFile(file) {
     return new Promise((resolve) => {
-      if (!isTextual(file.name)) { resolve({ name: file.name, content: null, binary: true }); return; }
       const r = new FileReader();
-      r.onload = () => resolve({ name: file.name, content: String(r.result), binary: false });
-      r.onerror = () => resolve({ name: file.name, content: null, binary: true });
-      r.readAsText(file);
+      if (isTextual(file.name)) {
+        r.onload = () => resolve({ name: file.name, content: String(r.result), binary: false, encoding: "utf-8" });
+        r.onerror = () => resolve({ name: file.name, content: "", binary: true, encoding: "base64" });
+        r.readAsText(file);
+      } else {
+        // binary (images, archives): keep bytes as base64 so they can be committed
+        r.onload = () => resolve({ name: file.name, content: String(r.result).split(",").pop(), binary: true, encoding: "base64" });
+        r.onerror = () => resolve({ name: file.name, content: "", binary: true, encoding: "base64" });
+        r.readAsDataURL(file);
+      }
     });
   }
 
@@ -48,7 +54,7 @@
         });
       } else {
         const tid = state.templates.length === 1 ? state.templates[0].id : null;
-        state.accessory.push({ id: ++seq, fileName: f.name, content: f.content, binary: f.binary, templateId: tid });
+        state.accessory.push({ id: ++seq, fileName: f.name, content: f.content, binary: f.binary, encoding: f.encoding, templateId: tid });
       }
     }
     // auto-assign loose accessories if exactly one template now exists
@@ -62,7 +68,7 @@
 
   function accessoriesFor(tid) {
     return state.accessory.filter((a) => a.templateId === tid)
-      .map((a) => ({ name: a.fileName, content: a.content }));
+      .map((a) => ({ name: a.fileName, content: a.content, encoding: a.encoding || "utf-8" }));
   }
 
   function buildAll() {
@@ -77,7 +83,12 @@
         });
         out.layouts[t.id] = layout;
         out.perTemplate[t.id] = { layout };
-        Object.keys(layout.files).forEach((p) => out.files.push({ path: p, content: layout.files[p] }));
+        const accEnc = {};
+        accessoriesFor(t.id).forEach((a) => {
+          accEnc[layout.versionDir + "/files/" + String(a.name).replace(/^\/+/, "")] = a.encoding;
+        });
+        Object.keys(layout.files).forEach((p) =>
+          out.files.push({ path: p, content: layout.files[p], encoding: accEnc[p] || "utf-8" }));
       } catch (e) {
         out.perTemplate[t.id] = { error: e.message };
         out.errors.push(e.message);
@@ -228,20 +239,82 @@
     const paths = built.files.map((f) => f.path).sort();
     $("#tree").textContent = paths.length ? renderTree(paths) : "(nothing yet)";
 
-    // submit (B2 stub)
+    // submit
     const btn = $("#submit"), note = $("#submit-note");
     btn.disabled = !allOk;
     if (allOk) {
-      const branches = Object.values(built.layouts).map((l) => "submit/" + l.folderName + "-" + l.version);
-      note.textContent = "Ready: " + paths.length + " files, branch(es): " + branches.join(", ");
-      btn.onclick = () => alert(
-        "Next phase (B2): log in with GitHub and this opens the pull request.\n\n" +
-        "Planned:\n  branch " + branches.join("\n  branch ") + "\n  " + paths.length + " files.\n\n" +
-        "Everything above is validated client-side; the CI live-import remains the final gate.");
+      note.textContent = "Ready: " + paths.length + " files across " +
+        Object.keys(built.layouts).length + " template(s).";
+      btn.onclick = () => submitAll(built);
     } else {
       note.textContent = "Fix the items above to enable submission.";
       btn.onclick = null;
     }
+  }
+
+  // --- submit: device-flow login, then open the PR(s) ---------------------
+
+  let cachedToken = null;
+
+  async function submitAll(built) {
+    const cfg = window.ZT_CONFIG || {};
+    const btn = $("#submit"), note = $("#submit-note");
+    if (!cfg.clientId) {
+      note.textContent = "Not configured: set clientId in config.js (register a GitHub OAuth App with device flow).";
+      return;
+    }
+    btn.disabled = true;
+    try {
+      if (!cachedToken) {
+        setAuth("Requesting a device code…");
+        cachedToken = await GH.deviceLogin({
+          clientId: cfg.clientId, relayBase: cfg.relayBase, scope: cfg.scope || "public_repo",
+          onCode: (c) => {
+            setAuth("");
+            const box = $("#auth");
+            box.innerHTML = "";
+            box.append(
+              el("p", { textContent: "1. Open " }),
+            );
+            const a = el("a", { href: c.verification_uri, target: "_blank", textContent: c.verification_uri });
+            box.firstChild.append(a, document.createTextNode(" and enter this code:"));
+            box.append(el("div", { className: "usercode", textContent: c.user_code }));
+            box.append(el("p", { className: "muted", textContent: "Waiting for you to authorize… this continues automatically." }));
+            try { window.open(c.verification_uri, "_blank"); } catch (e) {}
+          },
+        });
+      }
+      setAuth("Authorized. Opening pull request" + (Object.keys(built.layouts).length > 1 ? "s" : "") + "…");
+
+      const results = [];
+      for (const id of Object.keys(built.layouts)) {
+        const layout = built.layouts[id];
+        const files = built.files.filter((f) => f.path.indexOf(layout.versionDir + "/") === 0);
+        const t = state.templates.find((x) => String(x.id) === String(id));
+        const r = await GH.publishSubmission({
+          token: cachedToken, owner: cfg.owner, repo: cfg.repo, base: cfg.base,
+          branch: "submit/" + layout.folderName + "-" + layout.version,
+          title: "Add " + layout.folderName + " (" + layout.version + ")",
+          body: "Submitted via the upload form" + (t && t.author ? " by " + t.author : "") +
+                ".\n\nStructural checks passed client-side; the CI live-import gate runs on this PR.",
+          files: files.map((f) => ({ path: f.path, content: f.content, encoding: f.encoding })),
+        });
+        results.push(r);
+      }
+      const box = $("#auth"); box.innerHTML = "";
+      box.append(el("p", { className: "done", textContent: "✓ Pull request" + (results.length > 1 ? "s" : "") + " opened:" }));
+      results.forEach((r) => box.append(el("div", {}, [el("a", { href: r.url, target: "_blank", textContent: r.url })])));
+      note.textContent = "Done.";
+    } catch (e) {
+      setAuth("Error: " + e.message);
+      btn.disabled = false;
+    }
+  }
+
+  function setAuth(msg) {
+    let box = document.getElementById("auth");
+    if (!box) { box = el("div", { id: "auth" }); $("#summary").append(box); }
+    if (msg !== undefined && typeof msg === "string") box.textContent = msg;
   }
 
   function statusLine(kind, text) {
@@ -278,5 +351,5 @@
   drop.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files) onFiles(e.dataTransfer.files); });
 
   // Small seam for headless tests (no effect in normal use).
-  if (typeof window !== "undefined") window.__APP__ = { onFiles, buildAll, state };
+  if (typeof window !== "undefined") window.__APP__ = { onFiles, buildAll, submitAll, render, state };
 })();

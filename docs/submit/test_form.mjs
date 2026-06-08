@@ -73,5 +73,30 @@ const fsrm = "Operating_Systems/Windows/template_fsrm_utilization_windows/7.0/te
   assert(built.checks.every((c) => c.status === "success"), "multi-template submission still valid");
 
   console.log("\nfile tree:\n" + paths.join("\n"));
+
+  // 5. submit wiring: mock GH, drop an export + a binary image, click submit,
+  //    assert publishSubmission received the image as base64.
+  APP.state.templates.length = 0; APP.state.accessory.length = 0;
+  const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]); // PNG magic
+  await APP.onFiles([fileFrom(shelly), new window.File([pngBytes], "dashboard.png", { type: "image/png" })]);
+  APP.state.templates[0].category = "Unsorted";
+
+  let publishArgs = [];
+  window.GH = {
+    deviceLogin: async (o) => { o.onCode && o.onCode({ user_code: "WXYZ-7890", verification_uri: "https://github.com/login/device", expires_in: 900 }); return "gho_MOCK"; },
+    publishSubmission: async (args) => { publishArgs.push(args); return { url: "https://github.com/oscar120584/community-templates/pull/42", number: 42 }; },
+  };
+  window.ZT_CONFIG = { clientId: "Iv1.test", relayBase: "http://127.0.0.1:8788", owner: "oscar120584", repo: "community-templates", base: "main", scope: "public_repo" };
+
+  await APP.submitAll(APP.buildAll());
+  assert(publishArgs.length === 1, "submit called publishSubmission once");
+  const sent = publishArgs[0];
+  assert(sent.token === "gho_MOCK", "publish used the device-flow token");
+  assert(sent.branch === "submit/template_shelly_plus_1pm_gen2-7.0", "branch name derived from layout");
+  const png = sent.files.find((f) => f.path.endsWith("/files/dashboard.png"));
+  assert(png && png.encoding === "base64" && png.content.length > 0, "binary image sent as base64 under files/");
+  const ymlf = sent.files.find((f) => f.path.endsWith(".yaml"));
+  assert(ymlf && ymlf.encoding === "utf-8", "export sent as utf-8");
+
   if (!process.exitCode) console.log("\nALL FORM TESTS PASSED");
 })();
