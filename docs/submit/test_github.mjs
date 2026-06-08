@@ -106,17 +106,20 @@ const publishOpts = (fetchImpl) => ({
   const out = await GH.publishSubmission(publishOpts(fetchImpl));
   assert(out.number === 12, "fork path returns the cross-repo PR");
   assert(calls.includes("POST /repos/me/community-templates/forks"), "creates the fork when none exists");
+  assert(calls.includes("GET /repos/me/community-templates/git/ref/heads/main"), "reads the base from upstream, not the fork");
   assert(calls.includes("POST /repos/alice/community-templates/git/blobs"), "commits into the contributor's fork");
   assert(calls.includes("POST /repos/me/community-templates/pulls"), "opens the PR on the upstream");
+  assert(!calls.some((c) => c.includes("merge-upstream")), "never syncs/touches the fork's base branch");
 }
 
-// --- contributor ALREADY has a fork -> reuse it, no POST /forks ---
+// --- contributor ALREADY has a fork -> reuse it, no POST /forks, no base touch ---
 {
   const { calls, fetchImpl } = forkFetch(() => res(true, 200, { fork: true }));
   const out = await GH.publishSubmission(publishOpts(fetchImpl));
   assert(out.number === 12, "existing-fork path still returns the PR");
   assert(!calls.includes("POST /repos/me/community-templates/forks"), "does NOT re-create an existing fork");
-  assert(calls.includes("POST /repos/alice/community-templates/merge-upstream"), "syncs the existing fork base");
+  assert(!calls.some((c) => c.includes("merge-upstream")), "leaves the existing fork's branches untouched");
+  assert(calls.includes("GET /repos/me/community-templates/git/ref/heads/main"), "bases the branch on upstream, regardless of fork state");
 }
 
 // --- name collision: a non-fork repo of the same name -> clear error ---

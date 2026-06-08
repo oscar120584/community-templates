@@ -150,20 +150,21 @@
         await call("POST", "/repos/" + upstreamOwner + "/" + upstreamRepo + "/forks", {});
         await waitForRef(call, login, upstreamRepo, base, sleep);
       }
-
-      // best-effort: sync the fork's base branch with upstream so the PR has a
-      // clean base even if the fork was created long ago. Diverged forks just
-      // skip this and proceed as-is.
-      try {
-        await call("POST", "/repos/" + login + "/" + upstreamRepo + "/merge-upstream", { branch: base });
-      } catch (e) { /* nothing to sync or diverged — proceed */ }
+      // NOTE: we deliberately do NOT sync the fork's base branch. We never
+      // touch any existing branch in the contributor's fork — the submission
+      // branch is built straight from the upstream base commit below.
     }
+    const U = "/repos/" + upstreamOwner + "/" + upstreamRepo;
     const R = "/repos/" + headOwner + "/" + upstreamRepo;
 
-    // 3. base commit + its tree (from the head repo's base branch)
-    const ref = await call("GET", R + "/git/ref/heads/" + encodeURIComponent(base));
+    // 3. base commit + its tree — ALWAYS read from upstream, never from the
+    // fork. Forks share object storage with upstream (same repository network),
+    // so the fork can reference the upstream base SHA when we create the commit.
+    // This keeps the PR clean regardless of how stale or diverged the fork is,
+    // and means we don't depend on (or modify) the fork's branches at all.
+    const ref = await call("GET", U + "/git/ref/heads/" + encodeURIComponent(base));
     const baseSha = ref.object.sha;
-    const baseCommit = await call("GET", R + "/git/commits/" + baseSha);
+    const baseCommit = await call("GET", U + "/git/commits/" + baseSha);
     const baseTree = baseCommit.tree.sha;
 
     // 4. blobs
@@ -192,7 +193,6 @@
     }
 
     // 8. open the cross-repo PR on the upstream (or reuse an existing one)
-    const U = "/repos/" + upstreamOwner + "/" + upstreamRepo;
     const head = headOwner === upstreamOwner ? branch : headOwner + ":" + branch;
     try {
       const pr = await call("POST", U + "/pulls", { title, head, base, body });

@@ -44,10 +44,10 @@
       <p>You sign in with GitHub, and the submission is published <em>under your own account</em>:</p>
       <ul>
         <li>a <strong>fork</strong> of this repository is created in your account (or reused if you already have one);</li>
-        <li>its base branch is <strong>fast-forwarded to match upstream</strong> so the pull request has a clean base — if your fork has diverging commits on that branch, it is left untouched;</li>
-        <li>your files are committed to a new branch in your fork, and a pull request is opened back here from your fork.</li>
+        <li>your files go onto a <strong>new branch</strong> in that fork, based directly on this repository's latest commit — so the pull request is always clean, and <strong>none of your existing branches are modified</strong>, no matter how old or diverged your fork is;</li>
+        <li>a pull request is opened back here from that new branch.</li>
       </ul>
-      <p class="muted">The pull request stays open in your fork until it is reviewed and merged. Nothing is changed outside of your fork.</p>
+      <p class="muted">The pull request stays open until it is reviewed and merged. Nothing in your account is changed except adding the one new branch.</p>
     </aside>
     <div class="actions">
       <button id="submit" type="button" disabled>Open pull request</button>
