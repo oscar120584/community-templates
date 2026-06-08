@@ -1,0 +1,99 @@
+name: Submit template (issue bot)
+
+# Variant A front-door: a contributor opens a "Submit a template" issue; this
+# bot assembles the directory, validates it, and opens the PR for them — or
+# comments exactly what to fix. The opened PR still goes through review_pr.yaml
+# (the authoritative live-import gate) and human review.
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  submit:
+    # Only act on template-submission issues.
+    if: contains(github.event.issue.labels.*.name, 'template-submission')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r .github/workflows/scripts/requirements.txt
+
+      - name: Write issue body to file
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: printf '%s' "$BODY" > issue_body.md
+
+      - name: Run submission bot
+        id: bot
+        run: |
+          python .github/workflows/scripts/issue_to_submission.py \
+            --body issue_body.md --root . --write --comment-out comment.md
+        continue-on-error: true
+
+      - name: Post validation comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment "${{ github.event.issue.number }}" --body-file comment.md
+
+      # --- success path: open the PR -------------------------------------
+      - name: Create branch and pull request
+        if: steps.bot.outputs.valid == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.bot.outputs.branch }}
+          TITLE: ${{ steps.bot.outputs.title }}
+          ISSUE: ${{ github.event.issue.number }}
+          USER: ${{ github.event.issue.user.login }}
+        run: |
+          git config user.name "zabbix-template-bot"
+          git config user.email "noreply@zabbix.com"
+
+          git checkout -B "$BRANCH"
+          git add "${{ steps.bot.outputs.version_dir }}"
+          # Credit the issue author; the bot is only the committer.
+          git commit -m "$TITLE" \
+            -m "Submitted via issue #$ISSUE" \
+            -m "Co-authored-by: $USER <$USER@users.noreply.github.com>"
+          git push -f origin "$BRANCH"
+
+          if gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' | grep -q .; then
+            echo "PR already open for $BRANCH — branch updated."
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "$TITLE" \
+              --body "Automated submission from #$ISSUE by @$USER.
+
+          Closes #$ISSUE once merged.
+
+          Structural checks passed in the bot; the live-import gate runs below."
+          fi
+
+      - name: Label success
+        if: steps.bot.outputs.valid == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue edit "${{ github.event.issue.number }}" \
+            --add-label "pr-created" --remove-label "needs-changes" || true
+
+      # --- failure path: ask for changes ---------------------------------
+      - name: Label needs-changes
+        if: steps.bot.outputs.valid != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue edit "${{ github.event.issue.number }}" \
+            --add-label "needs-changes" --remove-label "pr-created" || true

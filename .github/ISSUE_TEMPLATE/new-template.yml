@@ -1,0 +1,85 @@
+name: Submit a template
+description: Publish a new template without dealing with forks or pull requests — fill this in and a bot opens the PR for you.
+title: "[Template] <name>"
+labels: ["template-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Submit a Zabbix community template
+
+        You **do not** need to fork the repository or know git. Fill in the
+        fields below; a bot will assemble the correct directory, generate the
+        README, validate everything, and open the pull request on your behalf.
+
+        Need only one thing handy: the template **exported from Zabbix**
+        (Data collection → Templates → Export → YAML).
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: Where does this template belong?
+      options:
+        - Applications
+        - Cloud
+        - Databases
+        - Network_Appliances
+        - Network_Devices
+        - Operating_Systems
+        - Power_Inverter
+        - Power_(UPS)
+        - Printers
+        - SCADA_IoT_Energy_Home_Automation_Industrial_monitoring
+        - Server_Hardware
+        - Storage_Devices
+        - Telephony
+        - Unsorted
+        - Virtualization
+        - Weather_Measurements
+        - Web_scenarios
+    validations:
+      required: true
+
+  - type: textarea
+    id: export
+    attributes:
+      label: Template export
+      description: Paste the full template exported from Zabbix (YAML, JSON or XML). The version and name are read from here automatically.
+      render: yaml
+    validations:
+      required: true
+
+  - type: input
+    id: author
+    attributes:
+      label: Author
+      description: Name or handle to credit in the README.
+    validations:
+      required: true
+
+  - type: textarea
+    id: overview
+    attributes:
+      label: Overview
+      description: A short description of what the template monitors and any requirements. Used as the README "Overview" section.
+    validations:
+      required: true
+
+  - type: input
+    id: slug
+    attributes:
+      label: Folder name override (optional)
+      description: Leave blank to derive it from the template name. Allowed characters — letters, digits, . ( ) _ -
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Before you submit
+      options:
+        - label: This template is my own work or I have the right to publish it under the repository LICENSE.
+          required: true
+        - label: I exported it from Zabbix (it is not hand-written) so it can be re-imported.
+          required: true

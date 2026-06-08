@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+*.pyc
+comment.md
+issue_body.md
