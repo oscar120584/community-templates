@@ -128,6 +128,7 @@ def generate_readme(
     parsed: ParsedExport,
     author: str | None = None,
     overview: str | None = None,
+    setup: str | None = None,
 ) -> str:
     """Render a README.md string for *parsed*.
 
@@ -158,8 +159,8 @@ def generate_readme(
         "",
         "## Setup",
         "",
-        STUB + " Describe how to enable data collection on the target and how "
-        "to link the template to a host.",
+        setup or (STUB + " Describe how to enable data collection on the target "
+                  "and how to link the template to a host."),
         "",
         "## Macros used",
         "",
