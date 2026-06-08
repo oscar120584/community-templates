@@ -64,6 +64,7 @@ jobs:
       # gate run on bot-opened PRs, create them with a PAT or GitHub App token
       # stored as a secret and reference it here instead of github.token.
       - name: Create branch and pull request
+        id: pr
         if: steps.bot.outputs.valid == 'true'
         env:
           GH_TOKEN: ${{ secrets.SUBMIT_BOT_TOKEN || github.token }}
@@ -83,17 +84,32 @@ jobs:
             -m "Co-authored-by: $USER <$USER@users.noreply.github.com>"
           git push -f origin "$BRANCH"
 
-          if gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' | grep -q .; then
-            echo "PR already open for $BRANCH — branch updated."
+          # Build the body without YAML indentation leaking in (printf, not heredoc).
+          # "Closes #N" auto-closes the issue when the PR is merged.
+          printf '%s\n' \
+            "Automated submission from #$ISSUE by @$USER." \
+            "" \
+            "Closes #$ISSUE" \
+            "" \
+            "Structural checks passed in the bot; the live-import gate runs below." > pr_body.md
+
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            url=$(gh pr view "$existing" --json url --jq .url)
+            echo "PR already open: $url (branch updated)."
           else
-            gh pr create --base main --head "$BRANCH" \
-              --title "$TITLE" \
-              --body "Automated submission from #$ISSUE by @$USER.
-
-          Closes #$ISSUE once merged.
-
-          Structural checks passed in the bot; the live-import gate runs below."
+            url=$(gh pr create --base main --head "$BRANCH" --title "$TITLE" --body-file pr_body.md)
           fi
+          echo "pr_url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Link the PR on the issue
+        if: steps.bot.outputs.valid == 'true' && steps.pr.outputs.pr_url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.pr.outputs.pr_url }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" \
+            --body "📦 Pull request opened for you: $URL — it will close this issue when merged."
 
       - name: Label success
         if: steps.bot.outputs.valid == 'true'
